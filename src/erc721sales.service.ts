@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import { AbiCoder, TransactionReceipt, ethers } from 'ethers';
+import { AbiCoder, JsonRpcProvider, Transaction, TransactionDescription, TransactionReceipt, ethers } from 'ethers';
 import { hexToNumberString } from 'web3-utils';
 import dotenv from 'dotenv';
 dotenv.config();
@@ -8,6 +8,7 @@ dotenv.config();
 import { config } from './config';
 import { BaseService, TweetRequest } from './base.service';
 import { createLogger } from './logging.utils';
+import { TransactionResponse } from 'alchemy-sdk';
 
 const logger = createLogger('erc721sales.service')
 
@@ -72,10 +73,11 @@ export class Erc721SalesService extends BaseService {
         }
         
         // not an erc721 transfer
-        if (!tx?.topics[3]) return
+        // Get transaction receipt
+        const receipt: TransactionReceipt = await this.provider.getTransactionReceipt(tx.transactionHash);
 
         // Get tokenId from topics
-        tokenId = hexToNumberString(tx?.topics[3]);
+        tokenId = this.getTokenId(tx, receipt);
 
         // Get transaction hash
         const { transactionHash } = tx;
@@ -89,9 +91,6 @@ export class Erc721SalesService extends BaseService {
         
         const { value } = transaction;
         let ether = ethers.formatEther(value.toString());
-
-        // Get transaction receipt
-        const receipt: TransactionReceipt = await this.provider.getTransactionReceipt(transactionHash);
 
         // Get token image
         const imageUrl = config.use_local_images 
@@ -133,7 +132,7 @@ export class Erc721SalesService extends BaseService {
        
         // Try to use custom parsers
         for (let parser of config.parsers) {
-          const result = parser.parseLogs(transaction, receipt.logs, tokenId)
+          const result = await parser.parseLogs(transaction, receipt.logs, tokenId)
           if (result) {
             tweetRequest.alternateValue = result
             tweetRequest.platform = parser.platform
@@ -159,6 +158,10 @@ export class Erc721SalesService extends BaseService {
         await new Promise( resolve => setTimeout(resolve, 500*retryCount) )
       }
     }
+  }
+
+  getTokenId(tx:any, receipt:TransactionReceipt) {
+    return hexToNumberString(tx?.topics[3])    
   }
 
 }
